@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>籠城ビルダー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+1p:wght@400;700&display=swap">
+<style>
+/* Layout: game canvas on top, HUD overlaid; shop in a wrapping grid below. Single dusk theme by choice. */
+:root{
+  --bg:#15141c; --panel:#211f2b; --line:#353244; --fg:#ece6d8; --muted:#9a93a8;
+  --accent:#f2a33a; --blood:#d8474b; --ok:#6fc28a; --steel:#8fa3b8;
+  --f-display:"DotGothic16",ui-monospace,monospace;
+  --f-body:"M PLUS 1p","Hiragino Sans",system-ui,sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);padding-inline:16px;padding-block:14px 28px}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px}
+h1{font-family:var(--f-display);font-weight:400;font-size:1.7rem;margin:0;letter-spacing:.06em;color:var(--accent)}
+.sub{color:var(--muted);font-size:.85rem}
+.stage{position:relative;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:auto;touch-action:manipulation}
+canvas.snipe{cursor:crosshair}
+.hud{position:absolute;inset:8px 10px auto 10px;display:flex;flex-wrap:wrap;gap:6px 14px;font-family:var(--f-display);font-size:.95rem;pointer-events:none;text-shadow:0 1px 2px #000}
+.hud b{color:var(--accent);font-weight:400}
+.hud b.red{color:#ff5a4f}
+.hpbar{width:120px;height:10px;border:1px solid var(--fg);display:inline-block;vertical-align:middle;margin-left:4px}
+.hpbar i{display:block;height:100%;background:var(--ok)}
+.pausedTag{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-family:var(--f-display);font-size:2rem;color:var(--fg);background:rgba(10,8,14,.7);padding:8px 22px;border-radius:4px;pointer-events:none}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,8,14,.72)}
+.card{background:var(--panel);border:1px solid var(--line);padding:22px 26px;border-radius:6px;text-align:center;max-width:440px;display:flex;flex-direction:column;gap:10px}
+.card h2{font-family:var(--f-display);font-weight:400;margin:0;font-size:1.6rem;color:var(--blood)}
+.card p{margin:0}
+.big{font-family:var(--f-display);font-size:2.6rem;color:var(--accent)}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:inherit;font-size:.9rem;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:7px 12px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:var(--accent);color:#1b1408;border-color:var(--accent);font-weight:700}
+.cost{font-family:var(--f-display);color:var(--accent);margin-left:6px}
+button.primary .cost{color:#1b1408}
+.log{color:var(--muted);font-size:.85rem;margin-left:auto;min-width:0}
+.shop{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.box h3{margin:0;font-family:var(--f-display);font-weight:400;font-size:1.05rem;letter-spacing:.05em}
+.box p{margin:0;color:var(--muted);font-size:.8rem}
+.box.locked{opacity:.6}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.guardSide{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:8px}
+.guardSide .hdr{display:flex;justify-content:space-between;font-size:.8rem;gap:8px}
+.guardSide .hdr b{font-family:var(--f-display);font-weight:400;color:var(--accent)}
+.guardSide button{font-size:.78rem;padding:6px 9px}
+.floors{display:flex;flex-direction:column;gap:4px;max-height:360px;overflow-y:auto;padding-right:4px}
+.floor{border:1px solid var(--line);border-radius:4px;background:var(--bg)}
+.floor summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:18px 44px 1fr;gap:6px;align-items:center;padding:7px 10px;font-size:.82rem}
+.floor summary::-webkit-details-marker{display:none}
+.floor summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+.floor[open] summary::before{transform:rotate(90deg)}
+.floor .fl{font-family:var(--f-display);color:var(--accent)}
+.floor .brief{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.floor .air{color:var(--steel);font-size:.72rem;margin-left:6px}
+.floor .inner{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 10px 10px}
+.floor .inner button{padding:6px 8px;font-size:.78rem;text-align:left}
+.tag{font-size:.72rem;color:var(--steel)}
+button.arming{background:var(--blood);border-color:var(--blood);color:#fff}
+button.arming .cost{color:#fff}
+canvas.placing{cursor:copy}
+.tune{display:grid;grid-template-columns:auto 1fr 48px;gap:6px 10px;align-items:center;font-size:.8rem}
+.tune output{font-family:var(--f-display);color:var(--accent);text-align:right;font-variant-numeric:tabular-nums}
+.tune input{width:100%;min-width:0;accent-color:var(--accent)}
+details.memo{color:var(--muted);font-size:.85rem}
+details.memo ul{margin:6px 0 0;padding-left:1.2em;line-height:1.7}
+@media (max-width:480px){.floor .inner{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>籠城ビルダー</h1>
+    <span class="sub">プロトタイプ v0.5 ／ 昼と夜をくり返し、赤い満月の夜にボスが来る</span>
+  </header>
+
+  <div class="stage">
+    <canvas id="cv" width="1000" height="560" aria-label="ゲーム画面"></canvas>
+    <div class="hud">
+      <span>階数 <b id="hFloor">1</b>F</span>
+      <span>耐久<span class="hpbar"><i id="hHp"></i></span> <span id="hHpT"></span></span>
+      <span>コイン <b id="hCoin">0</b></span>
+      <span>経過 <b id="hTime">0:00</b></span>
+      <span>脅威 <b id="hThreat">1</b></span>
+      <span><b id="hMoon">昼</b></span>
+      <span>ベスト <b id="hBest">1</b>F</span>
+    </div>
+    <div class="pausedTag" id="pausedTag" hidden>一時停止中</div>
+    <div class="overlay" id="ov">
+      <div class="card" id="ovCard">
+        <h2 style="color:var(--accent)">籠城ビルダー</h2>
+        <p>平屋からスタート。左右から途切れず押し寄せるゾンビを武器とバリケードで防ぎ、報酬で上の階を建てていきます。</p>
+        <p class="sub">昼と夜をくり返し、夜の月は三日月 → 半月 → 赤い満月と満ちていきます。満月の夜にはボスゾンビが現れます。5階に届くと空からも襲ってきます。</p>
+        <button class="primary" id="btnStart">はじめる</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="btnPause">一時停止</button>
+    <button id="btnSpeed">速度 ×1</button>
+    <span class="log" id="log">まず1階に武器を置きましょう。</span>
+  </div>
+
+  <div class="shop">
+    <div class="box">
+      <h3>建築</h3>
+      <p>1フロア増えるごとに武器スロット2つ・最大耐久+80。到達階数がスコアです。修理代は受けたダメージに比例します（足りない時は払える分だけ直します）。</p>
+      <div class="row">
+        <button id="bBuild">次の階を建てる<span class="cost" id="cBuild"></span></button>
+        <button id="bRepair">修理<span class="cost" id="cRepair"></span></button>
+      </div>
+    </div>
+    <div class="box">
+      <h3>バリケード</h3>
+      <p>素材：木の柵 → 石の壁 → 鉄の壁（壊れない）。高さを上げると、ゾンビが積み重なって乗り越えるまでの数が増えます。空の敵には効きません。</p>
+      <div id="guardBox" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    <div class="box">
+      <h3>時限爆弾</h3>
+      <p>安いが、設置してから爆発まで時間がかかります。ボタンを押してから画面の地面をタップして設置。爆発は地上・空の両方に効き、建物とバリケードは傷つけません。</p>
+      <div class="row"><button id="bBombS">時限爆弾（10秒）<span class="cost" id="cBombS"></span></button><button id="bBombL">大型爆弾（20秒）<span class="cost" id="cBombL"></span></button></div>
+      <span class="tag" id="tBomb"></span>
+    </div>
+    <div class="box" id="snipeBox">
+      <h3>屋上スナイパー</h3>
+      <p id="snipeDesc"></p>
+      <div class="row"><button id="bSnipe"><span id="lSnipe"></span><span class="cost" id="cSnipe"></span></button><span class="tag" id="tSnipe"></span></div>
+    </div>
+    <div class="box" style="grid-column:1/-1">
+      <h3>建物（階ごとの武器）</h3>
+      <p>階を開くと、その階の武器が届く範囲が画面に表示されます。銃は下向きに深く撃てないため、上の階からは足元のゾンビを狙えません。上の階は遠くの敵と空の敵の担当です。</p>
+      <div class="floors" id="floors"></div>
+    </div>
+    <div class="box">
+      <h3>バランス調整</h3>
+      <p>試遊しながら数値を詰めるためのつまみです。</p>
+      <div class="tune">
+        <label for="tRange">射程</label><input type="range" id="tRange" min="0.6" max="1.6" step="0.05" value="1"><output id="oRange">×1.00</output>
+        <label for="tDown">下向き射角</label><input type="range" id="tDown" min="10" max="80" step="5" value="35"><output id="oDown">35°</output>
+        <label for="tSpawn">出現量</label><input type="range" id="tSpawn" min="0.5" max="2" step="0.1" value="1"><output id="oSpawn">×1.0</output>
+      </div>
+    </div>
+  </div>
+
+  <details class="memo">
+    <summary>プロトタイプの仕様メモ</summary>
+    <ul>
+      <li>ゾンビは途切れず出現。脅威レベル（約45秒ごとに+1）で出現間隔と体力がゆるやかに上がり、2〜3体の群れでも来ます。</li>
+      <li>昼35秒・夜40秒をくり返します。昼は出現がやや少なめ（×0.7）。夜ごとに月が三日月 → 半月 → 赤い満月と満ち、満月の夜はボスが出現し出現数も増えます（赤い月は約3分45秒ごと）。</li>
+      <li>地上：通常、ランナー（脅威3〜）、タンク（脅威5〜）、ボス（満月）。バリケードで止められたゾンビは積み重なり、壁の高さを超えると乗り越えます。</li>
+      <li>空（5階〜）：コウモリ（速い・蛇行）、カラス、ハゲワシ（7階〜・硬い）、爆弾ガラス（8階〜・体当たりで自爆）。</li>
+      <li>時限爆弾（40枚・10秒・小範囲）と大型爆弾（130枚・20秒・大範囲）。同時に3個まで。威力は脅威レベルに合わせて伸びます。</li>
+      <li>射撃は射程距離と下向き射角の両方で判定。屋上スナイパーは3階から配備でき、制限なし。</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+(() => {
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const W = 1000, H = 560, GROUND = H - 46, CX = W/2, BW = 130, FH = 46;
+const SNIPE_UNLOCK = 3, AIR_FLOOR = 5, THREAT_SEC = 45, DAY = 35, NIGHT = 40, CYCLE = 75, UP_LIMIT = 75;
+const MOONS = ['三日月','半月','満月'];
+const $ = id => document.getElementById(id);
+const TUNE = {range:1, down:35, spawn:1};
+
+const WEAPONS = [
+  null,
+  {name:'ハンドガン', cost:30,  dmg:8,  rate:.6,  range:220, col:'#ece6d8'},
+  {name:'ライフル',   cost:90,  dmg:24, rate:1.0, range:340, col:'#8fd3ff'},
+  {name:'マシンガン', cost:220, dmg:6,  rate:.14, range:250, col:'#ffd36b'},
+  {name:'キャノン',   cost:420, dmg:55, rate:2.0, range:300, col:'#ff7a4d', splash:55},
+];
+const MATS = [null,
+  {name:'木の柵', cost:40,  hp:180, col:'#8a6a44'},
+  {name:'石の壁', cost:180, hp:600, col:'#a39d92'},
+  {name:'鉄の壁', cost:480, hp:Infinity, col:'#6f8196'}];
+const MAX_H = 4;
+const BOMBS = {
+  S:{name:'時限爆弾', cost:40,  fuse:10, r:95,  dmg:170, col:'#ffd36b', w:14},
+  L:{name:'大型爆弾', cost:130, fuse:20, r:175, dmg:520, col:'#ff5a4f', w:22},
+};
+const MAX_BOMBS = 3;
+const barH = h => 18 + h*16;           // barricade height in px
+const heightCost = h => 50 * h;        // cost to go from h to h+1
+const ZT = {
+  walker: {hp:22, spd:24, dps:6,  reward:5,  r:11, col:'#7fae6a'},
+  runner: {hp:14, spd:52, dps:5,  reward:6,  r:9,  col:'#b7d36a'},
+  tank:   {hp:95, spd:14, dps:12, reward:16, r:16, col:'#5f7f5a'},
+  boss:   {hp:420,spd:11, dps:22, reward:80, r:26, col:'#8a4f6b', boss:true},
+  bat:    {hp:10, spd:70, dps:3,  reward:5,  r:7,  col:'#4a3b5c', air:true, wobble:22},
+  crow:   {hp:18, spd:44, dps:5,  reward:7,  r:10, col:'#3d3446', air:true, wobble:6},
+  vulture:{hp:55, spd:26, dps:9,  reward:14, r:15, col:'#7a6150', air:true, wobble:4},
+  bomber: {hp:22, spd:38, dps:0,  reward:9,  r:11, col:'#a0584a', air:true, wobble:8, blast:55},
+};
+
+let S, speed = 1, paused = false, best = 1;
+try { best = +localStorage.getItem('rojo_best') || 1; } catch(e){}
+const openFloors = new Set([0]);
+
+function newState(){
+  return {
+    floors:1, hp:200, maxHp:200, coins:80, t:0,
+    slots:[[0,0]], cds:[[0,0]],
+    guards:[{mat:0,hgt:1,hp:0},{mat:0,hgt:1,hp:0}],
+    snipeLvl:0, snipeCd:0, night:-1, bombs:[], placing:null, ghost:null, shake:0,
+    zombies:[], spawnT:1.5, airT:5, fx:[], floaters:[], over:false, started:false, airWarned:false, seq:0,
+  };
+}
+S = newState();
+
+const threat = () => 1 + Math.floor(S.t / THREAT_SEC);
+const nightIdx = () => Math.floor(S.t / CYCLE);  // day+night pair index
+const inCycle = () => S.t % CYCLE;
+const isNight = () => inCycle() >= DAY;
+const moonPhase = () => nightIdx() % 3;          // tonight's moon: 0 三日月, 1 半月, 2 満月
+const isFull = () => isNight() && moonPhase() === 2;
+// 1 = full daylight, 0 = night; short dawn/dusk blends
+function daylight(){
+  const w = inCycle(); if (w >= DAY) return 0;
+  const dawn = nightIdx() === 0 ? 1 : Math.min(1, w / 4), dusk = Math.min(1, (DAY - w) / 5);
+  return Math.min(dawn, dusk);
+}
+const buildCost = () => Math.round(120 * Math.pow(1.5, S.floors - 1));
+const repairCost = () => Math.ceil((S.maxHp - S.hp) * 0.45);
+const guardRepairCost = g => g.mat && g.mat < 3 ? Math.ceil((MATS[g.mat].hp - g.hp) / MATS[g.mat].hp * MATS[g.mat].cost * 0.7) : 0;
+const snipeCost = () => S.snipeLvl ? 80 * S.snipeLvl : 150;
+const snipeDmg = () => 10 + (S.snipeLvl - 1) * 6;
+const slotPos = (f, side) => ({x: CX + (side ? BW/2 : -BW/2), y: GROUND - f*FH - FH/2});
+const guardX = side => CX + (side ? 1 : -1) * (BW/2 + 90);
+const fmtTime = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+const bodyH = z => z.r * 1.6;
+
+function log(t){ $('log').textContent = t; }
+function floatText(x,y,t,c){ S.floaters.push({x,y,t,c,life:1}); }
+
+/* ---------- spawning ---------- */
+function spawn(t, side, xOff = 0){
+  const b = ZT[t], lv = threat(), scale = 1 + (lv - 1) * .1 + S.t / 900;
+  const z = {t, side, x: (side ? W + 30 : -30) + (side ? xOff : -xOff), hp: b.hp*scale, max: b.hp*scale,
+    spd: b.spd * (b.boss ? 1 : 0.85 + Math.random()*.3), dps: b.dps*(1 + (lv-1)*.04), reward:b.reward, r:b.r, col:b.col,
+    bob:Math.random()*6, air:!!b.air, boss:!!b.boss, wobble:b.wobble||0, blast:b.blast||0, id:S.seq++};
+  if (z.air){
+    const lo = t === 'vulture' ? Math.max(2, S.floors - 3) : 2;
+    const f = lo + Math.floor(Math.random() * (S.floors - lo));
+    z.targetF = f; z.baseY = GROUND - f*FH - FH/2 - 30 - Math.random()*70; z.y = z.baseY;
+  } else z.y = GROUND - z.r;
+  S.zombies.push(z);
+}
+function spawnTick(dt){
+  const lv = threat(), full = isFull(), night = isNight();
+  // day / night / boss
+  const key = nightIdx() * 2 + (night ? 1 : 0);
+  if (key !== S.night){
+    S.night = key;
+    const n = nightIdx();
+    if (!night){ if (n > 0) log(`夜が明けた。昼のうちに立て直そう。${moonPhase() === 2 ? '今夜は赤い満月だ……' : ''}`); }
+    else if (full){
+      spawn('boss', n % 2);
+      if (lv >= 7) spawn('boss', 1 - n % 2);
+      log('赤い満月が昇った……ボスゾンビが現れた！');
+    } else log(`日が暮れた。${MOONS[moonPhase()]}の夜。${moonPhase() === 1 ? '次の夜は満月だ。' : ''}`);
+  }
+  S.spawnT -= dt;
+  if (S.spawnT <= 0){
+    const side = Math.random() < .5 ? 0 : 1;
+    const group = Math.random() < .3 + lv*.02 ? 2 + (Math.random() < .35 ? 1 : 0) : 1;
+    for (let i=0;i<group;i++){
+      let t = 'walker', r = Math.random();
+      if (lv >= 3 && r < .25) t = 'runner';
+      if (lv >= 5 && r > .88) t = 'tank';
+      spawn(t, side, i*26);
+    }
+    const base = Math.max(.4, 1.7 / (1 + (lv-1) * .2)) / TUNE.spawn / (full ? 1.25 : night ? 1 : .7);
+    S.spawnT = base * (0.6 + Math.random()*.8);
+  }
+  if (S.floors >= AIR_FLOOR){
+    if (!S.airWarned){ S.airWarned = true; log('5階到達！空からもゾンビが襲ってくるようになった。上の階の武器を強化しよう。'); }
+    S.airT -= dt;
+    if (S.airT <= 0){
+      const pool = ['bat','bat','crow','crow'];
+      if (S.floors >= 7) pool.push('vulture');
+      if (S.floors >= 8) pool.push('bomber');
+      const t = pool[Math.floor(Math.random()*pool.length)];
+      const side = Math.random() < .5 ? 0 : 1;
+      spawn(t, side);
+      if (t === 'bat' && Math.random() < .5) spawn('bat', side, 30);
+      S.airT = Math.max(1.6, 5.5 - (S.floors - AIR_FLOOR) * .4 - (lv-1)*.12) / TUNE.spawn * (0.6 + Math.random()*.8);
+    }
+  }
+}
+
+/* ---------- combat ---------- */
+function damage(z, d){
+  z.hp -= d;
+  if (z.hp <= 0 && !z.dead){
+    z.dead = true; S.coins += z.reward;
+    floatText(z.x, z.y - z.r - 10, `+${z.reward}`, '#f2a33a');
+  }
+}
+function canHit(p, z, w){
+  const dx = Math.abs(z.x - p.x), dy = z.y - p.y;   // dy>0 : target is below
+  if (Math.hypot(dx, dy) > w.range * TUNE.range) return false;
+  if (Math.abs(dy) <= FH * .6) return true;          // roughly same height: always OK
+  const ang = Math.atan2(dy, Math.max(dx, 1)) * 180 / Math.PI;
+  return ang <= TUNE.down && ang >= -UP_LIMIT;
+}
+function fireSlot(f, side, w){
+  const p = slotPos(f, side);
+  let target = null, bd = 1e9;
+  for (const z of S.zombies){
+    if (z.dead || z.side !== side || !canHit(p, z, w)) continue;
+    const d = Math.abs(z.x - CX);
+    if (d < bd){ bd = d; target = z; }   // closest to the building first
+  }
+  if (!target) return false;
+  S.fx.push({type:'shot', x1:p.x, y1:p.y, x2:target.x, y2:target.y, col:w.col, life:.12});
+  if (w.splash){
+    S.fx.push({type:'boom', x:target.x, y:target.y, r:w.splash, life:.35, col:'#ff9a4d'});
+    for (const z of S.zombies) if (!z.dead && Math.hypot(z.x - target.x, z.y - target.y) < w.splash) damage(z, w.dmg);
+  } else damage(target, w.dmg);
+  return true;
+}
+
+function updateGround(z, dt){
+  const dir = z.side ? -1 : 1, g = S.guards[z.side];
+  const gx = guardX(z.side), wallX = CX + (z.side ? 1 : -1) * (BW/2 + z.r);
+  const stopX = gx - dir * (z.r + 8);
+  const hB = barH(g.hgt);
+  if (!g.mat) { z.piled = false; }
+  if (z.piled){ z.atk = true; if (g.mat < 3){ g.hp -= z.dps*dt; } return; }
+  const beforeWall = z.side ? z.x > stopX : z.x < stopX;
+  if (g.mat && !z.passed && !beforeWall){
+    // arrived at barricade: climb over if the pile is tall enough, otherwise join the pile
+    const pileH = S.zombies.filter(o => o.piled && o.side === z.side && !o.dead).reduce((a,o) => a + bodyH(o), 0);
+    if (pileH + 2 >= hB){ z.passed = true; }
+    else { z.piled = true; z.pileT = S.t; z.x = stopX; return; }
+  }
+  if (z.side ? z.x <= wallX : z.x >= wallX){ z.x = wallX; S.hp -= z.dps*dt; z.atk = true; }
+  else { z.x += dir * z.spd * (z.passed && Math.abs(z.x - gx) < 30 ? .5 : 1) * dt; z.atk = false; }
+  // y: ride over the barricade top while passing it
+  const dist = Math.abs(z.x - gx);
+  const lift = z.passed && g.mat && dist < z.r + 22 ? hB * (1 - Math.max(0, dist - 8) / (z.r + 14)) : 0;
+  z.y = GROUND - z.r - Math.max(0, lift);
+}
+function settlePiles(){
+  for (let s=0;s<2;s++){
+    const g = S.guards[s];
+    const pile = S.zombies.filter(o => o.piled && o.side === s && !o.dead).sort((a,b) => a.pileT - b.pileT);
+    let base = 0;
+    for (const z of pile){ z.y = GROUND - base - z.r; base += bodyH(z); }
+    if (g.mat && g.mat < 3 && g.hp <= 0){
+      g.hp = 0; g.mat = 0; g.hgt = 1;
+      pile.forEach(z => { z.piled = false; z.y = GROUND - z.r; });
+      log(`${s?'右':'左'}のバリケードが破壊された！`); buildGuards();
+    }
+  }
+}
+function updateAir(z, dt){
+  const dir = z.side ? -1 : 1;
+  if (z.targetF >= S.floors) z.targetF = S.floors - 1;
+  const ty = GROUND - z.targetF*FH - FH/2;
+  const wallX = CX + (z.side ? 1 : -1) * (BW/2 + z.r);
+  if (z.side ? z.x <= wallX : z.x >= wallX){
+    z.x = wallX; z.y += (ty - z.y) * Math.min(1, dt*3); z.atk = true;
+    if (z.blast){
+      S.hp -= z.blast; z.dead = true;
+      S.fx.push({type:'boom', x:z.x, y:z.y, r:40, life:.35, col:'#ff5a4f'});
+      floatText(z.x, z.y - 20, `-${z.blast}`, '#ff5a4f');
+      return;
+    }
+    S.hp -= z.dps*dt;
+  } else {
+    z.x += dir * z.spd * dt;
+    z.baseY += (ty - z.baseY) * Math.min(1, dt*.5);
+    z.y = z.baseY + Math.sin(z.bob * .6) * z.wobble;
+    z.atk = false;
+  }
+}
+
+function updateBombs(dt){
+  S.shake = Math.max(0, S.shake - dt*30);
+  for (const b of S.bombs){
+    b.t -= dt;
+    if (b.t > 0) continue;
+    const k = BOMBS[b.k], scale = 1 + (threat() - 1) * .1;
+    const cy = GROUND - 10;
+    let hits = 0;
+    for (const z of S.zombies){
+      if (z.dead) continue;
+      if (Math.hypot(z.x - b.x, (z.y - cy) * .8) < k.r){ damage(z, k.dmg * scale); hits++; }
+    }
+    S.fx.push({type:'boom', x:b.x, y:cy, r:k.r, life:.7, max:.7, col:k.col});
+    S.fx.push({type:'boom', x:b.x, y:cy, r:k.r*.55, life:.45, max:.45, col:'#fff3c4'});
+    S.shake = b.k === 'L' ? 14 : 6;
+    floatText(b.x, cy - k.r*.6, `${k.name}！ ${hits}体`, '#ffd36b');
+    b.done = true;
+  }
+  S.bombs = S.bombs.filter(b => !b.done);
+}
+function update(dt){
+  if (!S.started || S.over || paused) return;
+  S.t += dt;
+  spawnTick(dt);
+  for (const z of S.zombies){
+    if (z.dead) continue;
+    z.bob += dt*8;
+    z.air ? updateAir(z, dt) : updateGround(z, dt);
+  }
+  settlePiles();
+  for (let f=0; f<S.floors; f++) for (let s=0; s<2; s++){
+    const w = WEAPONS[S.slots[f][s]]; if (!w) continue;
+    S.cds[f][s] -= dt;
+    if (S.cds[f][s] <= 0 && fireSlot(f, s, w)) S.cds[f][s] = w.rate;
+  }
+  S.snipeCd -= dt;
+  updateBombs(dt);
+  S.zombies = S.zombies.filter(z => !z.dead);
+  S.fx.forEach(e => e.life -= dt); S.fx = S.fx.filter(e => e.life > 0);
+  S.floaters.forEach(e => { e.life -= dt; e.y -= 30*dt; }); S.floaters = S.floaters.filter(e => e.life > 0);
+  if (S.hp <= 0){ S.hp = 0; gameOver(); }
+}
+
+function saveBest(){ if (S.floors > best){ best = S.floors; try{ localStorage.setItem('rojo_best', best); }catch(e){} } }
+function gameOver(){
+  S.over = true; saveBest();
+  $('ovCard').innerHTML = `<h2>倒壊</h2><div class="big">${S.floors}F</div>
+    <p>${fmtTime(S.t)} 持ちこたえました（脅威 ${threat()}・${nightIdx()+1}日目）。ベスト ${best}F</p>
+    <button class="primary" id="btnRe">もう一度</button>`;
+  $('ov').hidden = false;
+  $('btnRe').onclick = () => { S = newState(); S.started = true; openFloors.clear(); openFloors.add(0); $('ov').hidden = true; log('再建開始。'); buildAll(); refresh(); };
+  refresh();
+}
+
+/* ---------- drawing ---------- */
+const moonCv = document.createElement('canvas'); moonCv.width = moonCv.height = 120;
+const mctx = moonCv.getContext('2d');
+function drawSun(){
+  const w = inCycle(); if (w >= DAY) return;
+  const p = w / DAY, x = 60 + p * (W - 120), y = 200 - Math.sin(p * Math.PI) * 140;
+  const gl = ctx.createRadialGradient(x, y, 20, x, y, 110);
+  gl.addColorStop(0, 'rgba(255,220,150,.5)'); gl.addColorStop(1, 'rgba(255,220,150,0)');
+  ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, 110, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffe6a8'; ctx.beginPath(); ctx.arc(x, y, 26, 0, 7); ctx.fill();
+}
+function drawMoon(){
+  if (!isNight()) return;
+  const p = (inCycle() - DAY) / NIGHT, phase = moonPhase(), R = 30;
+  const x = 60 + p * (W - 120), y = 190 - Math.sin(p * Math.PI) * 130;
+  mctx.clearRect(0,0,120,120);
+  const c = 60, full = phase === 2;
+  mctx.globalCompositeOperation = 'source-over';
+  mctx.fillStyle = full ? '#e0463c' : '#f1dfa8';
+  mctx.beginPath(); mctx.arc(c, c, R, 0, 7); mctx.fill();
+  if (full){ mctx.fillStyle = 'rgba(120,20,20,.35)'; mctx.beginPath(); mctx.arc(c-8, c-6, 7, 0, 7); mctx.arc(c+10, c+8, 5, 0, 7); mctx.fill(); }
+  mctx.globalCompositeOperation = 'destination-out';
+  if (phase === 0){ mctx.beginPath(); mctx.arc(c - R*.55, c - R*.1, R*.95, 0, 7); mctx.fill(); }
+  if (phase === 1){ mctx.fillRect(c - R - 1, c - R - 1, R + 1, R*2 + 2); }
+  mctx.globalCompositeOperation = 'source-over';
+  if (full){
+    const gl = ctx.createRadialGradient(x, y, R, x, y, R*3.2);
+    gl.addColorStop(0, 'rgba(230,60,50,.45)'); gl.addColorStop(1, 'rgba(230,60,50,0)');
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, R*3.2, 0, 7); ctx.fill();
+  }
+  ctx.drawImage(moonCv, x - 60, y - 60);
+}
+function drawCones(){
+  for (const f of openFloors){
+    if (f >= S.floors) continue;
+    for (let s=0;s<2;s++){
+      const w = WEAPONS[S.slots[f][s]]; if (!w) continue;
+      const p = slotPos(f, s), R = w.range * TUNE.range, dir = s ? 1 : -1;
+      const a0 = -UP_LIMIT * Math.PI/180, a1 = TUNE.down * Math.PI/180;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y);
+      for (let i=0;i<=24;i++){ const a = a0 + (a1-a0)*i/24; ctx.lineTo(p.x + dir*Math.cos(a)*R, p.y + Math.sin(a)*R); }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(242,163,58,.08)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(242,163,58,.45)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+}
+function drawBombShape(x, k, tLeft, ghost){
+  const w = k.w, y = GROUND - w*.7;
+  ctx.globalAlpha = ghost ? .5 : 1;
+  ctx.fillStyle = '#2b2833'; ctx.fillRect(x - w/2, y, w, w*.7);
+  ctx.fillStyle = k.col; ctx.fillRect(x - w/2, y + w*.25, w, 3);
+  const blink = ghost || Math.sin(S.t * (tLeft < 3 ? 30 : tLeft < 6 ? 14 : 5)) > 0;
+  ctx.fillStyle = blink ? '#ff5a4f' : '#5a2020'; ctx.beginPath(); ctx.arc(x, y - 3, 3, 0, 7); ctx.fill();
+  // blast radius
+  ctx.strokeStyle = k.col; ctx.globalAlpha = ghost ? .6 : .25; ctx.setLineDash([5,5]); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(x, GROUND - 10, k.r, k.r / .8, 0, Math.PI, 0); ctx.stroke(); ctx.setLineDash([]);
+  if (!ghost){
+    // fuse ring + seconds
+    const frac = tLeft / k.fuse;
+    ctx.globalAlpha = 1; ctx.strokeStyle = tLeft < 3 ? '#ff5a4f' : k.col; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y - 22, 11, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac); ctx.stroke();
+    ctx.fillStyle = '#ece6d8'; ctx.font = '12px DotGothic16, monospace'; ctx.textAlign = 'center';
+    ctx.fillText(Math.ceil(tLeft), x, y - 18);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawBombs(){
+  for (const b of S.bombs) drawBombShape(b.x, BOMBS[b.k], b.t, false);
+  if (S.placing && S.ghost != null && validBombX(S.ghost)) drawBombShape(S.ghost, BOMBS[S.placing], 0, true);
+}
+function validBombX(x){ return Math.abs(x - CX) > BW/2 + 14 && x > 10 && x < W - 10; }
+function mix(a, b, t){
+  const pa = [1,3,5].map(i => parseInt(a.substr(i,2),16)), pb = [1,3,5].map(i => parseInt(b.substr(i,2),16));
+  return `rgb(${pa.map((v,i) => Math.round(v + (pb[i]-v)*t)).join(',')})`;
+}
+function camZoom(){ return Math.min(1, (GROUND - 60) / (S.floors*FH + 90)); }
+function draw(){
+  const z = camZoom(), L = daylight();
+  // which night palette to blend with: last night's around dawn, tonight's around dusk
+  const redPal = isNight() ? isFull() : (inCycle() < DAY/2 ? nightIdx() > 0 && (nightIdx()-1) % 3 === 2 : moonPhase() === 2);
+  const N = redPal ? ['#241018','#5a1f28','#8a2f2a'] : ['#1b1830','#4a2d3e','#7a3f35'];
+  const D = ['#4f7fb3','#9cc0dc','#e9cfa4'];
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, mix(N[0], D[0], L)); g.addColorStop(.7, mix(N[1], D[1], L)); g.addColorStop(1, mix(N[2], D[2], L));
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  drawSun(); drawMoon();
+  ctx.fillStyle = mix('#2a2030', '#6a7486', L);
+  [[40,90],[110,140],[190,70],[700,120],[780,80],[900,150]].forEach(([x,h])=>ctx.fillRect(x,GROUND-h*.8,56,h*.8));
+
+  ctx.save();
+  if (S.shake > 0) ctx.translate((Math.random()-.5)*S.shake, (Math.random()-.5)*S.shake);
+  ctx.translate(CX, GROUND); ctx.scale(z, z); ctx.translate(-CX, -GROUND);
+  ctx.fillStyle='#231b1c'; ctx.fillRect(-2000, GROUND, W+4000, 400);
+  ctx.fillStyle='#3a2a26'; ctx.fillRect(-2000, GROUND, W+4000, 4);
+  drawCones();
+  for (let f=0; f<S.floors; f++){
+    const y = GROUND - (f+1)*FH;
+    ctx.fillStyle = f%2 ? '#5a5566' : '#625c6f'; ctx.fillRect(CX-BW/2, y, BW, FH);
+    ctx.strokeStyle = openFloors.has(f) ? '#f2a33a' : '#2b2833'; ctx.lineWidth=2; ctx.strokeRect(CX-BW/2, y, BW, FH);
+    ctx.fillStyle = '#f2c46b'; ctx.globalAlpha=.75;
+    for (let i=0;i<3;i++) ctx.fillRect(CX-BW/2+22+i*32, y+12, 18, 18);
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#9a93a8'; ctx.font='12px DotGothic16, monospace'; ctx.textAlign='center';
+    ctx.fillText(`${f+1}F`, CX, y+FH-3);
+    for (let s=0;s<2;s++){
+      const lv = S.slots[f][s], p = slotPos(f,s);
+      if (!lv) { ctx.fillStyle='#3a3645'; ctx.fillRect(p.x-5, p.y-5, 10, 10); continue; }
+      const w = WEAPONS[lv];
+      ctx.fillStyle = '#2b2833'; ctx.fillRect(p.x-(s?0:14), p.y-7, 14, 14);
+      ctx.fillStyle = w.col; ctx.fillRect(s ? p.x+10 : p.x-10-8-lv*3, p.y-3, 8+lv*3, 6);
+    }
+  }
+  const ry = GROUND - S.floors*FH;
+  ctx.fillStyle='#3a3645'; ctx.fillRect(CX-BW/2-6, ry-6, BW+12, 6);
+  if (S.snipeLvl){ ctx.fillStyle='#ece6d8'; ctx.fillRect(CX-4, ry-24, 8, 18); ctx.beginPath(); ctx.arc(CX, ry-28, 6, 0, 7); ctx.fill(); }
+  // barricades
+  for (let s=0;s<2;s++){
+    const gd = S.guards[s]; if (!gd.mat) continue;
+    const x = guardX(s), h = barH(gd.hgt), m = MATS[gd.mat];
+    ctx.fillStyle = m.col; ctx.fillRect(x-8, GROUND-h, 16, h);
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    for (let yy = GROUND - 16; yy > GROUND - h; yy -= 16) ctx.fillRect(x-8, yy, 16, 2);
+    if (gd.mat === 3){ ctx.fillStyle = '#c9d4de'; for (let yy = GROUND - 8; yy > GROUND - h; yy -= 16){ ctx.fillRect(x-5, yy, 2, 2); ctx.fillRect(x+3, yy, 2, 2); } }
+    else {
+      ctx.fillStyle='#000'; ctx.fillRect(x-16, GROUND-h-10, 32, 4);
+      ctx.fillStyle='#6fc28a'; ctx.fillRect(x-16, GROUND-h-10, 32*gd.hp/m.hp, 4);
+    }
+  }
+  for (const zb of S.zombies){
+    const dir = zb.side ? -1 : 1;
+    if (zb.air){
+      const y = zb.y, flap = Math.sin(zb.bob*(zb.t==='bat'?2.6:1.6)) * zb.r*.9;
+      ctx.fillStyle = zb.col;
+      ctx.beginPath(); ctx.ellipse(zb.x, y, zb.r*.8, zb.r*.5, 0, 0, 7); ctx.fill();
+      const span = zb.t === 'vulture' ? 2.2 : 1.7;
+      ctx.beginPath(); ctx.moveTo(zb.x - zb.r*.3, y); ctx.lineTo(zb.x - zb.r*span, y - flap); ctx.lineTo(zb.x - zb.r*.2, y + zb.r*.3); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(zb.x + zb.r*.3, y); ctx.lineTo(zb.x + zb.r*span, y - flap); ctx.lineTo(zb.x + zb.r*.2, y + zb.r*.3); ctx.fill();
+      if (zb.t === 'bomber'){ ctx.fillStyle = '#2b2833'; ctx.beginPath(); ctx.arc(zb.x, y + zb.r*.7, zb.r*.45, 0, 7); ctx.fill();
+        ctx.fillStyle = Math.sin(zb.bob*3) > 0 ? '#ff5a4f' : '#ffd36b'; ctx.fillRect(zb.x-1, y + zb.r*.2, 2, 3); }
+      ctx.fillStyle='#d8474b'; ctx.fillRect(zb.x + dir*zb.r*.5 - 2, y - 3, 4, 3);
+    } else {
+      const y = zb.y - (zb.piled ? 0 : Math.abs(Math.sin(zb.bob))*2);
+      ctx.fillStyle = zb.col;
+      ctx.fillRect(zb.x - zb.r*.6, y - zb.r*.2, zb.r*1.2, zb.r*1.2);
+      ctx.beginPath(); ctx.arc(zb.x, y - zb.r*.5, zb.r*.6, 0, 7); ctx.fill();
+      ctx.fillRect(zb.x + dir*zb.r*.4, y - zb.r*.1 + (zb.atk ? Math.sin(zb.bob*2)*3 : 0), dir*zb.r*.9, zb.r*.28);
+      ctx.fillStyle = zb.boss ? '#ff5a4f' : '#d8474b'; ctx.fillRect(zb.x + dir*zb.r*.15 - 2, y - zb.r*.6, 4, 3);
+      if (zb.boss){ ctx.fillStyle='#ff5a4f'; ctx.font='12px DotGothic16, monospace'; ctx.textAlign='center'; ctx.fillText('BOSS', zb.x, y - zb.r*1.9); }
+    }
+    if (zb.hp < zb.max){
+      ctx.fillStyle='#000'; ctx.fillRect(zb.x-zb.r, zb.y-zb.r*1.6, zb.r*2, 3);
+      ctx.fillStyle='#d8474b'; ctx.fillRect(zb.x-zb.r, zb.y-zb.r*1.6, zb.r*2*zb.hp/zb.max, 3);
+    }
+  }
+  drawBombs();
+  for (const e of S.fx){
+    if (e.type==='shot'){ ctx.strokeStyle=e.col; ctx.globalAlpha=e.life/.12; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(e.x1,e.y1); ctx.lineTo(e.x2,e.y2); ctx.stroke(); }
+    else { const mx = e.max || .35, q = 1 - e.life/mx;
+      ctx.fillStyle=e.col; ctx.globalAlpha=(e.life/mx)*.65; ctx.beginPath(); ctx.arc(e.x,e.y,e.r*(.3+.8*q),0,7); ctx.fill(); }
+    ctx.globalAlpha=1;
+  }
+  ctx.font='16px DotGothic16, monospace'; ctx.textAlign='center';
+  for (const e of S.floaters){ ctx.globalAlpha=Math.min(1,e.life*1.5); ctx.fillStyle=e.c; ctx.fillText(e.t, e.x, e.y); }
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+/* ---------- input: sniper ---------- */
+function toWorld(ev){
+  const r = cv.getBoundingClientRect(), z = camZoom();
+  const sx = (ev.clientX - r.left) * W / r.width, sy = (ev.clientY - r.top) * H / r.height;
+  return {wx: CX + (sx - CX)/z, wy: GROUND + (sy - GROUND)/z, z};
+}
+cv.addEventListener('pointermove', ev => { if (S.placing) S.ghost = toWorld(ev).wx; });
+cv.addEventListener('pointerleave', () => { S.ghost = null; });
+cv.addEventListener('pointerdown', ev => {
+  if (!S.started || S.over) return;
+  if (S.placing){
+    const {wx} = toWorld(ev), k = BOMBS[S.placing];
+    if (!validBombX(wx)){ log('建物の上には置けません。左右の地面をタップしてください。'); return; }
+    if (S.coins < k.cost || S.bombs.length >= MAX_BOMBS){ setPlacing(null); return; }
+    S.coins -= k.cost;
+    S.bombs.push({k:S.placing, x:wx, t:k.fuse});
+    log(`${k.name}を設置。${k.fuse}秒後に爆発します。`);
+    setPlacing(null); refresh(); return;
+  }
+  if (paused || !S.snipeLvl || S.snipeCd > 0) return;
+  const {wx, wy, z} = toWorld(ev);
+  let t = null, bd = 40/z;
+  for (const zb of S.zombies){ const d = Math.hypot(zb.x - wx, zb.y - wy); if (d < bd + zb.r){ bd = d; t = zb; } }
+  const ry = GROUND - S.floors*FH - 28;
+  if (t){ S.fx.push({type:'shot', x1:CX, y1:ry, x2:t.x, y2:t.y, col:'#ffffff', life:.12}); damage(t, snipeDmg()); S.snipeCd = .45; }
+});
+
+/* ---------- shop ---------- */
+function buy(cost, fn){ if (S.coins < cost || S.over) return; S.coins -= cost; fn(); refresh(); }
+function slotLabel(f, s){ const lv = S.slots[f][s]; return lv ? WEAPONS[lv].name : '空き'; }
+function buildFloors(){
+  const el = $('floors'), scroll = el.scrollTop; el.innerHTML = '';
+  for (let f = S.floors-1; f >= 0; f--){
+    const d = document.createElement('details'); d.className = 'floor'; d.open = openFloors.has(f);
+    d.addEventListener('toggle', () => { d.open ? openFloors.add(f) : openFloors.delete(f); });
+    const airNote = S.floors >= AIR_FLOOR && f >= 2 ? '<span class="air">対空</span>' : '';
+    d.innerHTML = `<summary><span class="fl">${f+1}F</span><span class="brief">左 ${slotLabel(f,0)} ／ 右 ${slotLabel(f,1)}${airNote}</span></summary><div class="inner"></div>`;
+    const inner = d.querySelector('.inner');
+    for (let s=0;s<2;s++){
+      const lv = S.slots[f][s], nx = WEAPONS[lv+1], b = document.createElement('button');
+      b.innerHTML = nx ? `${s?'右':'左'}：${slotLabel(f,s)} → ${nx.name}<span class="cost">${nx.cost}</span>` : `${s?'右':'左'}：${slotLabel(f,s)}（最大）`;
+      if (nx){ b.dataset.cost = nx.cost; b.onclick = () => buy(nx.cost, () => { S.slots[f][s]++; buildFloors(); }); } else b.disabled = true;
+      inner.appendChild(b);
+    }
+    el.appendChild(d);
+  }
+  el.scrollTop = scroll;
+}
+function buildGuards(){
+  const box = $('guardBox'); box.innerHTML = '';
+  for (let s=0;s<2;s++){
+    const gd = S.guards[s], wrap = document.createElement('div'); wrap.className = 'guardSide';
+    const m = MATS[gd.mat];
+    const state = guardState(gd);
+    wrap.innerHTML = `<div class="hdr"><span>${s?'右':'左'}</span><b class="gstate" data-side="${s}">${state}</b></div><div class="row"></div>`;
+    const row = wrap.querySelector('.row');
+    const nx = MATS[gd.mat+1];
+    const b1 = document.createElement('button');
+    b1.innerHTML = nx ? `${gd.mat ? '素材 → ' : '設置：'}${nx.name}<span class="cost">${nx.cost}</span>` : '素材（最大）';
+    if (nx){ b1.dataset.cost = nx.cost; b1.onclick = () => buy(nx.cost, () => { gd.mat++; gd.hp = MATS[gd.mat].hp; buildGuards(); }); } else b1.disabled = true;
+    row.appendChild(b1);
+    if (gd.mat){
+      const b2 = document.createElement('button');
+      if (gd.hgt < MAX_H){
+        const c = heightCost(gd.hgt);
+        b2.innerHTML = `高さ ${gd.hgt} → ${gd.hgt+1}<span class="cost">${c}</span>`; b2.dataset.cost = c;
+        b2.onclick = () => buy(c, () => { gd.hgt++; buildGuards(); });
+      } else { b2.textContent = '高さ（最大）'; b2.disabled = true; }
+      row.appendChild(b2);
+      if (gd.mat < 3){
+        const b3 = document.createElement('button'); b3.className = 'grepair'; b3.dataset.side = s;
+        b3.innerHTML = `補修<span class="cost"></span>`;
+        b3.onclick = () => partialRepairGuard(gd);
+        row.appendChild(b3);
+      }
+    }
+    box.appendChild(wrap);
+  }
+}
+function guardState(gd){
+  const m = MATS[gd.mat];
+  return !gd.mat ? 'なし' : `${m.name}・高さ${gd.hgt}（${gd.mat === 3 ? '壊れない' : Math.ceil(gd.hp) + '/' + m.hp}）`;
+}
+function partialRepairGuard(gd){
+  const full = guardRepairCost(gd); if (!full || S.over) return;
+  const pay = Math.min(full, Math.floor(S.coins)); if (pay <= 0) return;
+  const m = MATS[gd.mat];
+  S.coins -= pay; gd.hp = pay >= full ? m.hp : Math.min(m.hp, gd.hp + (m.hp - gd.hp) * pay / full);
+  buildGuards(); refresh();
+}
+function buildAll(){ buildFloors(); buildGuards(); }
+
+$('bBuild').onclick = () => buy(buildCost(), () => {
+  S.floors++; S.slots.push([0,0]); S.cds.push([0,0]); S.maxHp += 80; S.hp += 80;
+  openFloors.clear(); openFloors.add(S.floors - 1);
+  log(S.floors === SNIPE_UNLOCK ? `${S.floors}階が完成！屋上スナイパーが配備できるようになった。` : `${S.floors}階が完成！`);
+  saveBest(); buildFloors();
+});
+$('bRepair').onclick = () => {
+  const full = repairCost(); if (!full || S.over) return;
+  const pay = Math.min(full, Math.floor(S.coins)); if (pay <= 0) return;
+  S.coins -= pay; S.hp = pay >= full ? S.maxHp : Math.min(S.maxHp, S.hp + pay / 0.45);
+  refresh();
+};
+$('bSnipe').onclick = () => { if (S.floors >= SNIPE_UNLOCK) buy(snipeCost(), () => { S.snipeLvl++; if (S.snipeLvl === 1) log('屋上スナイパー配備！ゾンビをタップして狙撃。'); }); };
+
+function setPlacing(k){
+  S.placing = k; S.ghost = null;
+  cv.classList.toggle('placing', !!k);
+  if (k) log(`${BOMBS[k].name}：設置する地面をタップ（もう一度押すとキャンセル）`);
+  refresh();
+}
+['S','L'].forEach(k => { $('bBomb' + k).onclick = () => setPlacing(S.placing === k ? null : k); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.placing) setPlacing(null); });
+
+// tuning sliders
+[['tRange','oRange','range',v=>`×${(+v).toFixed(2)}`],['tDown','oDown','down',v=>`${v}°`],['tSpawn','oSpawn','spawn',v=>`×${(+v).toFixed(1)}`]]
+  .forEach(([i,o,k,f]) => { const el = $(i); const up = () => { TUNE[k] = +el.value; $(o).textContent = f(el.value); }; el.addEventListener('input', up); up(); });
+
+let lastGuardKey = '';
+function refresh(){
+  $('hFloor').textContent = S.floors; $('hCoin').textContent = Math.floor(S.coins);
+  $('hTime').textContent = fmtTime(S.t); $('hThreat').textContent = threat();
+  const ph = moonPhase(), w = inCycle();
+  if (w < DAY){
+    const left = Math.ceil(DAY - w);
+    $('hMoon').textContent = ph === 2 ? `昼（日没まで${left}秒・今夜は赤い満月）` : `昼（日没まで${left}秒・今夜は${MOONS[ph]}）`;
+  } else {
+    const left = Math.ceil(CYCLE - w);
+    $('hMoon').textContent = ph === 2 ? `赤い満月の夜（夜明けまで${left}秒）` : `${MOONS[ph]}の夜（夜明けまで${left}秒）`;
+  }
+  $('hMoon').classList.toggle('red', ph === 2);
+  $('hBest').textContent = best;
+  $('hHp').style.width = (100*S.hp/S.maxHp) + '%';
+  $('hHp').style.background = S.hp/S.maxHp < .3 ? 'var(--blood)' : 'var(--ok)';
+  $('hHpT').textContent = `${Math.ceil(S.hp)}/${S.maxHp}`;
+  $('cBuild').textContent = buildCost(); $('bBuild').dataset.cost = buildCost();
+  const rc = repairCost(); $('cRepair').textContent = rc ? rc : '—';
+  // sniper
+  const unlocked = S.floors >= SNIPE_UNLOCK;
+  $('snipeBox').classList.toggle('locked', !unlocked);
+  $('snipeDesc').textContent = unlocked ? 'ゾンビをタップして手動射撃（地上・空どちらも、射角制限なし）。' : `${SNIPE_UNLOCK}階到達で配備できます。`;
+  $('lSnipe').textContent = S.snipeLvl ? '威力強化' : '配備する';
+  $('cSnipe').textContent = snipeCost(); $('bSnipe').dataset.cost = snipeCost();
+  $('tSnipe').textContent = S.snipeLvl ? `Lv${S.snipeLvl}・1発 ${snipeDmg()}ダメージ` : '';
+  cv.classList.toggle('snipe', S.snipeLvl > 0);
+  document.querySelectorAll('[data-cost]').forEach(b => { b.disabled = S.over || S.coins < +b.dataset.cost; });
+  $('bRepair').disabled = S.over || !rc || S.coins < 1;
+  document.querySelectorAll('.gstate').forEach(b => { b.textContent = guardState(S.guards[+b.dataset.side]); });
+  document.querySelectorAll('.grepair').forEach(b => {
+    const c = guardRepairCost(S.guards[+b.dataset.side]);
+    b.querySelector('.cost').textContent = c ? c : '—'; b.disabled = S.over || !c || S.coins < 1;
+  });
+  if (!unlocked) $('bSnipe').disabled = true;
+  ['S','L'].forEach(k => {
+    const b = $('bBomb' + k), c = BOMBS[k].cost;
+    $('cBomb' + k).textContent = c;
+    b.classList.toggle('arming', S.placing === k);
+    b.disabled = S.over || !S.started || (S.placing !== k && (S.coins < c || S.bombs.length >= MAX_BOMBS));
+  });
+  $('tBomb').textContent = `設置中 ${S.bombs.length}/${MAX_BOMBS}` + (S.bombs.length ? '：' + S.bombs.map(b => `${BOMBS[b.k].name} 残り${Math.ceil(b.t)}秒`).join('、') : '');
+  $('btnPause').disabled = !S.started || S.over;
+  $('pausedTag').hidden = !paused || S.over || !S.started;
+}
+
+function togglePause(){ if (!S.started || S.over) return; paused = !paused; $('btnPause').textContent = paused ? '再開' : '一時停止'; refresh(); }
+$('btnPause').onclick = togglePause;
+document.addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body){ e.preventDefault(); togglePause(); } });
+$('btnSpeed').onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; $('btnSpeed').textContent = `速度 ×${speed}`; };
+$('btnStart').onclick = () => { S.started = true; $('ov').hidden = true; refresh(); };
+
+let prev = performance.now(), acc = 0;
+function loop(now){
+  const dt = Math.min(.05, (now - prev)/1000); prev = now;
+  for (let i=0;i<speed;i++) update(dt);
+  draw();
+  acc += dt;
+  if (acc > .1){ acc = 0;
+    const gk = S.guards.map(g => `${g.mat}:${g.hgt}`).join();
+    if (gk !== lastGuardKey){ lastGuardKey = gk; buildGuards(); }
+    refresh();
+  }
+  requestAnimationFrame(loop);
+}
+buildAll(); refresh(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
